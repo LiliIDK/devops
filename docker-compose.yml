@@ -1,50 +1,151 @@
 services:
 
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    container_name: rabbitmq
+
+    environment:
+      RABBITMQ_DEFAULT_USER: monitoring
+      RABBITMQ_DEFAULT_PASS: monitoring123
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    restart: unless-stopped
+
+    networks:
+      - monitoring-network
+
+
   agent1:
     build: .
     container_name: agent1
+
     environment:
       AGENT_NAME: agent-1
-      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: monitoring
+      RABBITMQ_PASSWORD: monitoring123
+      RABBITMQ_QUEUE: network.metrics
+      COLLECT_INTERVAL_MS: 5000
+
     depends_on:
-      - victoriametrics
+      rabbitmq:
+        condition: service_healthy
+
     restart: unless-stopped
+
     networks:
       - monitoring-network
+
 
   agent2:
     build: .
     container_name: agent2
+
     environment:
       AGENT_NAME: agent-2
-      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: monitoring
+      RABBITMQ_PASSWORD: monitoring123
+      RABBITMQ_QUEUE: network.metrics
+      COLLECT_INTERVAL_MS: 5000
+
     depends_on:
-      - victoriametrics
+      rabbitmq:
+        condition: service_healthy
+
     restart: unless-stopped
+
     networks:
       - monitoring-network
+
 
   agent3:
     build: .
     container_name: agent3
+
     environment:
       AGENT_NAME: agent-3
-      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: monitoring
+      RABBITMQ_PASSWORD: monitoring123
+      RABBITMQ_QUEUE: network.metrics
+      COLLECT_INTERVAL_MS: 5000
+
     depends_on:
-      - victoriametrics
+      rabbitmq:
+        condition: service_healthy
+
     restart: unless-stopped
+
     networks:
       - monitoring-network
+
 
   agent4:
     build: .
     container_name: agent4
+
     environment:
       AGENT_NAME: agent-4
-      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: monitoring
+      RABBITMQ_PASSWORD: monitoring123
+      RABBITMQ_QUEUE: network.metrics
+      COLLECT_INTERVAL_MS: 5000
+
     depends_on:
-      - victoriametrics
+      rabbitmq:
+        condition: service_healthy
+
     restart: unless-stopped
+
+    networks:
+      - monitoring-network
+
+
+  metrics-consumer:
+    build: .
+    container_name: metrics-consumer
+
+    command:
+      - java
+      - -cp
+      - /app/app.jar
+      - ru.course.monitoring.MetricsConsumerMain
+
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: monitoring
+      RABBITMQ_PASSWORD: monitoring123
+      RABBITMQ_QUEUE: network.metrics
+      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+      victoriametrics:
+        condition: service_started
+
+    restart: unless-stopped
+
     networks:
       - monitoring-network
 
@@ -53,7 +154,7 @@ services:
     image: victoriametrics/victoria-metrics:v1.152.0
     container_name: victoriametrics
 
-    # При необходимости можно временно открыть VictoriaMetrics наружу:
+    # Для диагностики можно временно открыть:
     # ports:
     #   - "8428:8428"
 
@@ -65,6 +166,7 @@ services:
       - "-retentionPeriod=1d"
 
     restart: unless-stopped
+
     networks:
       - monitoring-network
 
@@ -73,7 +175,6 @@ services:
     image: grafana/grafana:13.2.1
     container_name: grafana
 
-    # Прямой доступ localhost:3000 нам больше не нужен:
     # ports:
     #   - "3000:3000"
 
@@ -88,6 +189,7 @@ services:
       - victoriametrics
 
     restart: unless-stopped
+
     networks:
       - monitoring-network
 
@@ -106,15 +208,19 @@ services:
       - grafana
 
     restart: unless-stopped
+
     networks:
       - monitoring-network
 
 
 volumes:
+
   victoria-data:
   grafana-data:
+  rabbitmq-data:
 
 
 networks:
+
   monitoring-network:
     driver: bridge

@@ -44,6 +44,24 @@ public class LinuxNetworkMetricsCollector implements NetworkMetricsCollector {
                     .trim()
                     .split("\\s+");
 
+            /*
+             * Формат /proc/net/dev:
+             *
+             * Receive:
+             * 0 bytes
+             * 1 packets
+             * 2 errs
+             * 3 drop
+             * ...
+             *
+             * Transmit:
+             * 8 bytes
+             * 9 packets
+             * 10 errs
+             * 11 drop
+             * ...
+             */
+
             long rxBytes = Long.parseLong(values[0]);
             long rxPackets = Long.parseLong(values[1]);
             long rxErrors = Long.parseLong(values[2]);

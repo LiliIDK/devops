@@ -5,72 +5,41 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.List;
+import java.time.Duration;
 
 public class VictoriaMetricsClient {
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient;
     private final String url;
-    private final String agentName;
 
-    public VictoriaMetricsClient(String url, String agentName) {
+    public VictoriaMetricsClient(String url) {
+
         this.url = url;
-        this.agentName = agentName;
+
+        this.httpClient =
+                HttpClient.newBuilder()
+                        .connectTimeout(
+                                Duration.ofSeconds(5)
+                        )
+                        .build();
     }
 
-    public void send(List<NetworkMetrics> metrics)
+    public void send(String payload)
             throws IOException, InterruptedException {
 
-        StringBuilder body = new StringBuilder();
-
-        for (NetworkMetrics metric : metrics) {
-
-            String labels =
-                    "{agent=\"" + agentName +
-                            "\",interface=\"" + metric.interfaceName() + "\"}";
-
-            body.append("network_rx_bytes")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.rxBytes())
-                    .append("\n");
-
-            body.append("network_tx_bytes")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.txBytes())
-                    .append("\n");
-
-            body.append("network_rx_packets")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.rxPackets())
-                    .append("\n");
-
-            body.append("network_tx_packets")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.txPackets())
-                    .append("\n");
-
-            body.append("network_rx_errors")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.rxErrors())
-                    .append("\n");
-
-            body.append("network_tx_errors")
-                    .append(labels)
-                    .append(" ")
-                    .append(metric.txErrors())
-                    .append("\n");
-        }
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "text/plain")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                .build();
+        HttpRequest request =
+                HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .timeout(Duration.ofSeconds(10))
+                        .header(
+                                "Content-Type",
+                                "text/plain"
+                        )
+                        .POST(
+                                HttpRequest.BodyPublishers
+                                        .ofString(payload)
+                        )
+                        .build();
 
         HttpResponse<String> response =
                 httpClient.send(
@@ -78,12 +47,17 @@ public class VictoriaMetricsClient {
                         HttpResponse.BodyHandlers.ofString()
                 );
 
-        if (response.statusCode() < 200 ||
-                response.statusCode() >= 300) {
+        if (
+                response.statusCode() < 200
+                        ||
+                        response.statusCode() >= 300
+        ) {
 
             throw new IOException(
                     "VictoriaMetrics returned HTTP "
                             + response.statusCode()
+                            + ": "
+                            + response.body()
             );
         }
     }

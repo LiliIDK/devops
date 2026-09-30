@@ -2,67 +2,130 @@ package ru.course.monitoring;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 
 public class Main {
 
-    private static final long COLLECT_INTERVAL_MS = 5000;
-
     public static void main(String[] args) {
 
-        System.out.println("Monitoring Agent started!");
+        String agentName =
+                getEnv("AGENT_NAME", "agent-1");
 
-        String victoriaUrl = System.getenv()
-                .getOrDefault(
-                        "VICTORIA_URL",
-                        "http://victoriametrics:8428/api/v1/import/prometheus"
+        String rabbitHost =
+                getEnv("RABBITMQ_HOST", "rabbitmq");
+
+        int rabbitPort =
+                Integer.parseInt(
+                        getEnv("RABBITMQ_PORT", "5672")
                 );
 
-        String agentName = System.getenv()
-                .getOrDefault(
-                        "AGENT_NAME",
-                        "agent-1"
+        String rabbitUser =
+                getEnv("RABBITMQ_USER", "monitoring");
+
+        String rabbitPassword =
+                getEnv("RABBITMQ_PASSWORD", "monitoring123");
+
+        String queueName =
+                getEnv("RABBITMQ_QUEUE", "network.metrics");
+
+        long collectInterval =
+                Long.parseLong(
+                        getEnv("COLLECT_INTERVAL_MS", "5000")
                 );
+
+        System.out.println(
+                "Monitoring Agent started: " + agentName
+        );
+
+        System.out.println(
+                "RabbitMQ: " + rabbitHost + ":" + rabbitPort
+        );
+
+        System.out.println(
+                "Queue: " + queueName
+        );
 
         NetworkMetricsCollector collector =
                 new LinuxNetworkMetricsCollector();
 
-        VictoriaMetricsClient victoriaMetricsClient =
-                new VictoriaMetricsClient(
-                        victoriaUrl,
-                        agentName
-                );
+        PrometheusPayloadBuilder payloadBuilder =
+                new PrometheusPayloadBuilder();
 
-        while (true) {
+        try (
+                RabbitMqPublisher publisher =
+                        new RabbitMqPublisher(
+                                rabbitHost,
+                                rabbitPort,
+                                rabbitUser,
+                                rabbitPassword,
+                                queueName,
+                                agentName
+                        )
+        ) {
 
-            try {
+            while (!Thread.currentThread().isInterrupted()) {
 
-                List<NetworkMetrics> metrics =
-                        collector.collect();
+                try {
 
-                victoriaMetricsClient.send(metrics);
+                    List<NetworkMetrics> metrics =
+                            collector.collect();
 
-                System.out.println(
-                        "Metrics sent successfully. Agent: "
-                                + agentName
-                );
+                    long timestamp =
+                            System.currentTimeMillis();
 
-            } catch (IOException | InterruptedException e) {
+                    String payload =
+                            payloadBuilder.build(
+                                    metrics,
+                                    agentName,
+                                    timestamp
+                            );
 
-                System.out.println(
-                        "Error: " + e.getMessage()
-                );
+                    publisher.publish(payload);
 
+                    System.out.println(
+                            "Metrics published to RabbitMQ. Agent: "
+                                    + agentName
+                    );
+
+                } catch (IOException | TimeoutException e) {
+
+                    System.err.println(
+                            "Publish error: "
+                                    + e.getMessage()
+                    );
+
+                } catch (InterruptedException e) {
+
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+
+                try {
+
+                    Thread.sleep(collectInterval);
+
+                } catch (InterruptedException e) {
+
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
 
-            try {
+        } catch (IOException | TimeoutException e) {
 
-                Thread.sleep(COLLECT_INTERVAL_MS);
-
-            } catch (InterruptedException e) {
-
-                Thread.currentThread().interrupt();
-                break;
-            }
+            System.err.println(
+                    "Cannot connect to RabbitMQ: "
+                            + e.getMessage()
+            );
         }
+    }
+
+    private static String getEnv(
+            String name,
+            String defaultValue
+    ) {
+
+        return System.getenv()
+                .getOrDefault(name, defaultValue);
     }
 }
