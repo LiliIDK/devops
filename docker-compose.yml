@@ -1,0 +1,120 @@
+services:
+
+  agent1:
+    build: .
+    container_name: agent1
+    environment:
+      AGENT_NAME: agent-1
+      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+  agent2:
+    build: .
+    container_name: agent2
+    environment:
+      AGENT_NAME: agent-2
+      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+  agent3:
+    build: .
+    container_name: agent3
+    environment:
+      AGENT_NAME: agent-3
+      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+  agent4:
+    build: .
+    container_name: agent4
+    environment:
+      AGENT_NAME: agent-4
+      VICTORIA_URL: http://victoriametrics:8428/api/v1/import/prometheus
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.152.0
+    container_name: victoriametrics
+
+    # При необходимости можно временно открыть VictoriaMetrics наружу:
+    # ports:
+    #   - "8428:8428"
+
+    volumes:
+      - victoria-data:/victoria-metrics-data
+
+    command:
+      - "-storageDataPath=/victoria-metrics-data"
+      - "-retentionPeriod=1d"
+
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    container_name: grafana
+
+    # Прямой доступ localhost:3000 нам больше не нужен:
+    # ports:
+    #   - "3000:3000"
+
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+    depends_on:
+      - victoriametrics
+
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+    depends_on:
+      - grafana
+
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+
+volumes:
+  victoria-data:
+  grafana-data:
+
+
+networks:
+  monitoring-network:
+    driver: bridge
